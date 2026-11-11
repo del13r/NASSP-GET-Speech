@@ -2,7 +2,7 @@
 
 Windows PySide6 GUI that reads an Apollo transcript JSON, follows Ground Elapsed Time (GET)
 sent over a Windows named pipe by your Orbiter add-on, and speaks each event with Piper TTS
-at the right moment. Replaces the console script `GET.NP.10.py`.
+at the right moment.
 
 ## Setup
 
