@@ -84,11 +84,12 @@ def test_selector_switches_during_load_and_persists(qapp, tmp_path, monkeypatch)
         assert win.windowTitle() == "NASSP GET Speech"
         win._show_view(0)
         assert started.wait(2)
-        win.transcript_selector.setCurrentIndex(1)
+        win.transcript_menu.actions()[1].trigger()
         release.set()
         pump(qapp, 1)
         assert [event.main.text for event in win.timeline] == ["Second mission"]
         assert Config.load(cfg._path).transcript_file == str(second)
+        assert [action.isChecked() for action in win.transcript_menu.actions()] == [False, True]
     finally:
         release.set()
         win.close()
@@ -99,10 +100,57 @@ def test_selector_keeps_custom_path_and_reports_missing(qapp, tmp_path):
     missing = tmp_path / "custom.json"
     win = MainWindow(make_config(tmp_path, missing), simulate=("+000:00:00", 1.0))
     try:
-        assert win.transcript_selector.currentData() == str(missing)
+        current = next(action for action in win.transcript_menu.actions() if action.isChecked())
+        assert current.data() == str(missing)
+        assert current.text() == f"Custom: {missing}"
         win._show_view(0)
         pump(qapp, 0.5)
         assert "Transcript not found" in win.banner.text()
+    finally:
+        win.close()
+        pump(qapp, 0.2)
+
+
+def test_transcript_button_refreshes_menu_and_selects(qapp, tmp_path, monkeypatch):
+    from PySide6.QtCore import QTimer
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from apollo_speaker import main_window
+
+    custom = str(tmp_path / "custom.json")
+    mission = str(tmp_path / "mission.json")
+    transcripts = []
+    monkeypatch.setattr(main_window, "discover_transcripts", lambda: list(transcripts))
+    cfg = make_config(tmp_path, custom)
+    win = MainWindow(cfg, simulate=("+000:00:00", 1.0))
+    try:
+        loads = []
+        monkeypatch.setattr(win, "_load_transcript", lambda: loads.append(cfg.transcript_file))
+        win._show_view(0)
+        win.show()
+        pump(qapp, 0.1)
+        loads.clear()
+        transcripts.append(("Mission", mission))
+        seen = []
+
+        def choose_mission():
+            seen.append(win.transcript_menu.isVisible())
+            win.transcript_menu.actions()[0].trigger()
+            win.transcript_menu.close()
+
+        QTimer.singleShot(0, choose_mission)
+        QTest.mouseClick(win.transcript_button, Qt.LeftButton)
+        pump(qapp, 0.1)
+        assert seen == [True]
+        assert cfg.transcript_file == mission
+        assert Config.load(cfg._path).transcript_file == mission
+        assert loads == [mission]
+        win._show_view(1)
+        loads.clear()
+        win._select_transcript(custom)
+        assert not loads
+        win._show_view(0)
+        assert loads == [custom]
     finally:
         win.close()
         pump(qapp, 0.2)
@@ -112,12 +160,41 @@ def test_bundled_default_loads_in_transcript_view(qapp, tmp_path):
     cfg = make_config(tmp_path, Config().transcript_file)
     win = MainWindow(cfg, simulate=("+000:00:00", 1.0))
     try:
-        assert win.transcript_selector.currentText() == "Apollo 12"
+        assert next(action.text() for action in win.transcript_menu.actions() if action.isChecked()) == "Apollo 12"
         win._show_view(0)
         deadline = time.monotonic() + 10
         while not win.timeline and time.monotonic() < deadline:
             pump(qapp, 0.05)
         assert len(win.timeline) > 10000
+    finally:
+        win.close()
+        pump(qapp, 0.2)
+
+
+def test_transcript_button_does_not_expand_window_for_long_names(qapp, tmp_path, monkeypatch):
+    from apollo_speaker import main_window
+
+    path = str(tmp_path / "custom.json")
+    transcripts = [("Short", path)]
+    monkeypatch.setattr(main_window, "discover_transcripts", lambda: transcripts)
+    win = MainWindow(make_config(tmp_path, path), simulate=("+000:00:00", 1.0))
+    try:
+        win._show_view(0)
+        win.show()
+        win.resize(1, 700)
+        pump(qapp, 0.1)
+        width = win.width()
+        button_width = win.transcript_button.sizeHint().width()
+
+        transcripts[:] = [("Very long mission name " * 50, str(tmp_path / "other.json"))]
+        win.config.transcript_file = str(tmp_path / ("long custom path " * 50))
+        win.transcript_menu.aboutToShow.emit()
+        win.resize(1, 700)
+        pump(qapp, 0.1)
+        assert win.transcript_button.sizeHint().width() == button_width
+        assert win.width() == width
+        assert win.transcript_menu.actions()[0].text() == transcripts[0][0]
+        assert win.transcript_menu.actions()[1].isChecked()
     finally:
         win.close()
         pump(qapp, 0.2)

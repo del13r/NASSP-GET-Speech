@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListView,
     QMainWindow,
+    QMenu,
     QPushButton,
     QSizePolicy,
     QSplitter,
@@ -264,12 +265,12 @@ class MainWindow(QMainWindow):
         outer.addWidget(header)
 
         controls = QHBoxLayout()
-        controls.addWidget(QLabel("Transcript:"))
-        self.transcript_selector = QComboBox()
-        self.transcript_selector.setToolTip("Select a transcript from the transcripts folder")
+        self.transcript_button = QPushButton("Transcript")
+        self.transcript_menu = QMenu(self.transcript_button)
+        self.transcript_button.setMenu(self.transcript_menu)
+        self.transcript_menu.aboutToShow.connect(self._refresh_transcripts)
         self._refresh_transcripts()
-        self.transcript_selector.currentIndexChanged.connect(self._select_transcript)
-        controls.addWidget(self.transcript_selector)
+        controls.addWidget(self.transcript_button)
         self.speech_btn = QPushButton()
         self.speech_btn.setObjectName("speech")
         self.speech_btn.setCheckable(True)
@@ -331,6 +332,7 @@ class MainWindow(QMainWindow):
         self.view.setModel(self.model)
         self.view.setItemDelegate(ChatDelegate(self.view))
         self.view.setSelectionMode(QListView.NoSelection)
+        self.view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.view.setVerticalScrollMode(QListView.ScrollPerPixel)
         self.view.setLayoutMode(QListView.SinglePass)
         self.view.setResizeMode(QListView.Adjust)
@@ -374,25 +376,26 @@ class MainWindow(QMainWindow):
 
     def _refresh_transcripts(self) -> None:
         selected = os.path.normcase(os.path.abspath(resolve_transcript_path(self.config.transcript_file)))
-        self.transcript_selector.blockSignals(True)
-        self.transcript_selector.clear()
-        current = -1
-        for label, path in discover_transcripts():
-            self.transcript_selector.addItem(label, path)
-            if os.path.normcase(os.path.abspath(resolve_transcript_path(path))) == selected:
-                current = self.transcript_selector.count() - 1
-        if current < 0:
-            self.transcript_selector.addItem(f"Custom: {self.config.transcript_file}", self.config.transcript_file)
-            current = self.transcript_selector.count() - 1
-        self.transcript_selector.setCurrentIndex(current)
-        self.transcript_selector.blockSignals(False)
+        transcripts = discover_transcripts()
+        if not any(os.path.normcase(os.path.abspath(resolve_transcript_path(path))) == selected
+                   for _, path in transcripts):
+            transcripts.append((f"Custom: {self.config.transcript_file}", self.config.transcript_file))
+        self.transcript_menu.clear()
+        for label, path in transcripts:
+            action = self.transcript_menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(os.path.normcase(os.path.abspath(resolve_transcript_path(path))) == selected)
+            action.setData(path)
+            action.triggered.connect(lambda checked=False, path=path: self._select_transcript(path))
+            if action.isChecked():
+                self.transcript_button.setToolTip(f"Current transcript: {label}\nSelect a transcript")
 
-    def _select_transcript(self) -> None:
-        path = self.transcript_selector.currentData()
-        if path is None or path == self.config.transcript_file:
+    def _select_transcript(self, path: str) -> None:
+        if path == self.config.transcript_file:
             return
         self.config.transcript_file = path
         self.config.save()
+        self._refresh_transcripts()
         if self.stack.currentIndex() == 0:
             self._load_transcript()
 

@@ -20,9 +20,9 @@ python -m apollo_speaker --simulate +000:00:00 --accel 1      # no Orbiter neede
 python -m apollo_speaker --transcript C:\path\t.json --model-dir C:\piper\models
 ```
 
-The default transcript is `transcripts\apollo12_transcript.json`. Open **Transcript** and
-choose a mission from the selector. To add another mission, put its JSON file in the
-project's `transcripts` folder; it appears when you next open the transcript view.
+The default transcript is `transcripts\apollo12_transcript.json`. Open the transcript view,
+then click **Transcript** to choose a mission. To add another mission, put its JSON file in
+the project's `transcripts` folder; it appears when you next open the menu.
 Files use the same event format as the bundled transcript. **Settings** and `--transcript`
 also support a custom JSON path outside that folder.
 
