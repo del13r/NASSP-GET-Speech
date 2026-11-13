@@ -9,7 +9,7 @@ from PySide6.QtCore import QObject, QTimer, QUrl, Signal
 from .config import PLAYBACK_SEQUENTIAL, PLAYBACK_TIMESTAMP
 from .scheduler import Clip
 
-PAO_INTERRUPT_ACCEL = 1.0  # PAO-interrupt only applies above this time acceleration
+PAO_INTERRUPT_ACCEL = 10.0
 
 
 class QtSoundBackend:
@@ -106,14 +106,15 @@ class Player(QObject):
         self.playback_error.emit(message)
 
     def play(self, clip: Clip) -> None:
-        # Skip non‑PAO above 1×
-        if clip.accel > 1.0 and not clip.is_pao:
-            return
+        interrupt_pao = (
+            clip.is_pao
+            and not clip.is_null_pao
+            and self.pao_override
+            and clip.accel > PAO_INTERRUPT_ACCEL
+        )
 
-        interrupt_pao = clip.is_pao and not clip.is_null_pao and self.pao_override
-
-        # Timestamped PAO always plays; it stops older PAO first when enabled
-        if clip.is_pao and not clip.is_null_pao:
+        # Timestamped PAO always plays; it stops older PAO first when enabled.
+        if clip.is_pao and not clip.is_null_pao and self.policy == PLAYBACK_TIMESTAMP:
             if interrupt_pao:
                 for entry in [a for a in self._active if a["pao"]]:
                     self._finish(entry, notify=False)

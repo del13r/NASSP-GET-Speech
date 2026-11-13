@@ -20,6 +20,16 @@ python -m apollo_speaker --simulate +000:00:00 --accel 1      # no Orbiter neede
 python -m apollo_speaker --transcript C:\path\t.json --model-dir C:\piper\models
 ```
 
+### Desktop shortcut (Windows)
+
+To launch without opening a console, create a Windows shortcut with:
+
+- **Target:** `"C:\path\to\pythonw.exe" -m apollo_speaker`
+- **Start in:** the folder where you cloned this repository
+
+Use the `pythonw.exe` from the Python installation where the project requirements
+are installed. On first launch, configure Piper and its voice models in **Settings**.
+
 The default transcript is `transcripts\apollo12_transcript.json`. Open the transcript view,
 then click **Transcript** to choose a mission. To add another mission, put its JSON file in
 the project's `transcripts` folder; it appears when you next open the menu.
