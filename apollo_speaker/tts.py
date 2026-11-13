@@ -49,22 +49,19 @@ def _convert_large_number(match) -> str:
     )
 
 def segment_for_piper(text: str) -> str:
-    # 1. Hyphens → full stop (always)
-    text = re.sub(r"\s*[-–—]\s*", ". ", text)
-
-    # 2. If the sentence is long, break commas into full stops
+    # If the sentence is long, break commas into full stops
     if len(text) > 180:  # tune threshold if needed
-        text = text.replace(",", ". ")
+        text = re.sub(r"(?<!\d),(?!\d)", ". ", text)
     else:
         # Keep commas for natural pauses
-        text = text.replace(",", ", ")
+        text = re.sub(r"(?<!\d),(?!\d)", ", ", text)
 
-    # 3. Break long conjunction chains
+    # Break long conjunction chains
     if len(text) > 200:
         text = re.sub(r"\b(and|but|so|that|which)\b", r". \1", text)
 
-    # 4. Clean up multiple periods
-    text = re.sub(r"\.{2,}", ".", text)
+    # Preserve a pause after ellipses, even when the transcript has no space.
+    text = re.sub(r"\.{2,}\s*", ". ", text)
 
     return text.strip()
 

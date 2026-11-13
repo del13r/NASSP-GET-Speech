@@ -221,6 +221,7 @@ def test_follow_scrolls_to_distant_event(qapp, tmp_path):
     t.write_text(json.dumps(events), encoding="utf-8")
     win = MainWindow(make_config(tmp_path, t), simulate=("+110:00:00", 1.0))
     win.resize(900, 700)
+    win._show_view(0)
     win.show()
     pump(qapp, 3.0)
     idx = win.model.next_idx
