@@ -2,7 +2,8 @@
 
 Windows PySide6 GUI that reads an Apollo transcript JSON, follows Ground Elapsed Time (GET)
 sent over a Windows named pipe by your Orbiter add-on, and speaks each event with Piper TTS
-at the right moment.
+at the right moment. Browser playback synchronization is handled by the
+[NASSP Ground Elapsed Time add-on](https://github.com/del13r/NASSP-GroundElapsedTime), not this app.
 
 ## Setup
 
@@ -30,8 +31,8 @@ To launch without opening a console, create a Windows shortcut with:
 Use the `pythonw.exe` from the Python installation where the project requirements
 are installed. On first launch, configure Piper and its voice models in **Settings**.
 
-The default transcript is `transcripts\apollo12_transcript.json`. Open the transcript view,
-then click **Transcript** to choose a mission. To add another mission, put its JSON file in
+The default transcript is `transcripts\apollo12_transcript.json` and loads on startup.
+Use **Transcript** to choose a mission. To add another mission, put its JSON file in
 the project's `transcripts` folder; it appears when you next open the menu.
 Files use the same event format as the bundled transcript. **Settings** and `--transcript`
 also support a custom JSON path outside that folder.
@@ -58,6 +59,8 @@ preserved in the data. Inclusion here does not imply an official endorsement or 
 - Playback policy: **Timestamp** (play at the event time, clips may overlap) or **Sequential** (one speaker
   at a time, later clips queue). A new PAO clip always cuts off a playing PAO clip above 10x time
   acceleration; at 10x or lower the selected policy alone decides.
+- At high time acceleration, ordinary crew dialogue is skipped while PAO updates remain eligible for
+  speech, using the existing scheduling and playback settings.
 - Chat-style transcript with portraits and per-speaker colours; "Up next" preview shows the
   next 5 events before they are spoken; Follow auto-scrolls.
 - Jump resilience: forward jumps (loading a save) and backward/forward MFD sync adjustments realign
@@ -75,14 +78,24 @@ preserved in the data. Inclusion here does not imply an official endorsement or 
 `assets/portraits/`: conrad, gordon, bean, gibson, carr, lind, Weitz, stafford, scmitt (`.png`),
 mapped to the matching speakers; other speakers get a coloured initials avatar.
 
+## Browser synchronization
+
+The Ground Elapsed Time add-on owns the `http://127.0.0.1:8765/` server and the browser
+extension that synchronizes apolloinrealtime.org. Replace/unload the older **NASSP GET Speech**
+unpacked browser extension and use the extension provided by the add-on project. This app no
+longer serves the browser-sync endpoint.
+
+The legacy `site_offset_seconds` value is retained in this app's config file for compatibility,
+but is no longer applied here. If you customized it, copy the numeric value from
+`%APPDATA%\ApolloGetSpeaker\config.json` (or your configured `--config` path) into the
+GroundElapsedTime browser extension's popup. It is an offset in seconds added to the GET
+(default `0.0`). No automatic settings migration is performed.
+
 ## Pipe protocol
 
-Pipe message is `GET\naccel` (e.g. `+000:01:23\n1`). Pipe name is configurable.
-The current add-on also publishes pause snapshots and transitions on
-`\\.\pipe\GroundElapsedTimePauseV1`. Site sync requires this pause stream and a
-current GET: if either is unavailable, the browser holds playback and reports
-that sync is unavailable instead of guessing. Older add-ons still provide GET
-and transcript functionality but cannot drive site sync until updated.
+The add-on sends GET samples as `GET\naccel` (e.g. `+000:01:23\n1`) on the configurable GET
+pipe. It also publishes pause state on `\\.\pipe\GroundElapsedTimePauseV1`; the app uses that
+stream with fresh GET samples to keep speech timing aligned across Orbiter pauses and resumes.
 
 ## Tests
 

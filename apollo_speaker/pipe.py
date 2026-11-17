@@ -177,7 +177,6 @@ class PauseReader(PipeReader):
     """Read the independent pause stream; None means the state is unknown."""
 
     pause_changed = Signal(object, float)
-    pause_seen = Signal(float)
     PIPE_NAME = r"\\.\pipe\GroundElapsedTimePauseV1"
     HEARTBEAT_TIMEOUT = 1.5
 
@@ -234,11 +233,8 @@ class PauseReader(PipeReader):
                         if not n:
                             raise PauseProtocolError("Pause pipe closed")
                         last_data = time.monotonic()
-                        previous_records = parser.records
                         for paused in parser.feed(bytes(buf[:n])):
                             self.pause_changed.emit(paused, last_data)
-                        if parser.records != previous_records:
-                            self.pause_seen.emit(last_data)
                     finally:
                         try:
                             if issued and not completed:

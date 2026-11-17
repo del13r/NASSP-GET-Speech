@@ -10,6 +10,26 @@ pytest.importorskip("PySide6")
 from apollo_speaker.pipe import DISCONNECTED, PauseReader, PipeReader
 
 
+def test_engine_clock_freezes_until_post_resume_sample():
+    from apollo_speaker.clock import GetClock
+    from apollo_speaker.engine import Engine
+
+    clock = GetClock()
+    scheduler = SimpleNamespace(clock=clock, on_sample=lambda _raw, accel, t: clock.update(10, accel, t))
+    engine = SimpleNamespace(
+        _scheduler=scheduler, _pause_state=None, _pause_event_t=0.0,
+        _last_sample_t=0.0, _awaiting_running_sample=False,
+    )
+    Engine.on_sample(engine, "+000:00:10", 1.0, 10.0)
+    Engine.on_pause(engine, True, 10.3)
+    frozen = clock.estimate(10.3)
+    assert clock.estimate(20.0) == pytest.approx(frozen)
+    Engine.on_pause(engine, False, 20.0)
+    assert clock.estimate(20.0) == pytest.approx(frozen)
+    Engine.on_sample(engine, "+000:00:10", 1.0, 20.1)
+    assert clock.estimate(20.2) > frozen
+
+
 def test_reader_reconnects_after_gap_and_accepts_new_snapshot(monkeypatch):
     class WinError(Exception):
         winerror = 109
@@ -103,7 +123,6 @@ def test_real_windows_byte_pipe():
     reader = PauseReader()
     reader.pipe_name = name
     states = []
-    seen = []
 
     def on_pause(state, _timestamp):
         states.append(state)
@@ -112,7 +131,6 @@ def test_real_windows_byte_pipe():
             reader.stop()
 
     reader.pause_changed.connect(on_pause, Qt.ConnectionType.DirectConnection)
-    reader.pause_seen.connect(lambda t: seen.append(t), Qt.ConnectionType.DirectConnection)
     reader.start()
     try:
         assert done.wait(4), states
@@ -124,7 +142,6 @@ def test_real_windows_byte_pipe():
     assert not reader.isRunning()
     assert not errors
     assert states[-3:] == [False, True, False]
-    assert seen
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows named pipes required")

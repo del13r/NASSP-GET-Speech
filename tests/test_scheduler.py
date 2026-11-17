@@ -201,16 +201,26 @@ def test_backward_sync_adjustment_replays_from_new_position():
     assert sink.of("rewound") == [("rewound", 1)] and s.pointer == 1
 
 
-def test_crew_speech_skipped_at_high_accel_but_pao_kept():
-    s, sink, jobs = make(EVENTS, max_speech_accel=10)
-    s.on_sample("+000:00:00", 50.0, 0.0)
+def test_60x_skips_crew_dialogue_but_retains_pao_updates():
+    events = [
+        ev("+000:00:01", "Conrad"),
+        ev("+000:00:02", "Public Affairs Officer"),
+        ev("+000:00:03", "Bean"),
+        {"GET": None, "speaker": "Public Affairs Officer", "text": "Attached update"},
+    ]
+    s, sink, jobs = make(events, max_speech_accel=10)
+    s.on_sample("+000:00:00", 60.0, 0.0)
     s.tick(0.0)
     requested = {j[1]: [x.speaker for x in j[2]] for j in jobs}
-    assert 0 not in requested  # crew event has nothing to generate at 50x
-    s2, sink2, jobs2 = make([ev("+000:00:01", "Public Affairs Officer")], max_speech_accel=10)
-    s2.on_sample("+000:00:00", 50.0, 0.0)
-    s2.tick(0.0)
-    assert len(jobs2) == 1
+    assert 0 not in requested
+    assert requested[1] == ["Public Affairs Officer"]
+    assert requested[2] == ["Public Affairs Officer"]
+    finish(s, jobs, 0.0)
+    s.tick(0.1)
+    assert sink.of("fired") == [("fired", 0), ("fired", 1), ("fired", 2)]
+    assert [(clip.event_index, clip.is_pao, clip.accel) for clip in sink.clips] == [
+        (1, True, 60.0), (2, True, 60.0),
+    ]
 
 
 def test_same_timestamp_events_are_independent():

@@ -74,13 +74,13 @@ def test_pao_does_not_interrupt_in_timestamp_mode_at_or_below_10x(app):
 def test_pao_interrupts_previous_pao_only_above_10x(app):
     b = FakeBackend()
     p = Player(b, PLAYBACK_TIMESTAMP, pao_override=True)
-    p.play(clip(1, dur=0.5, accel=20.0))
-    p.play(clip(2, pao=True, dur=0.5, accel=20.0))
-    p.play(clip(3, pao=True, dur=0.5, accel=20.0))
+    p.play(clip(1, dur=0.5, accel=60.0))
+    p.play(clip(2, pao=True, dur=0.5, accel=60.0))
+    p.play(clip(3, pao=True, dur=0.5, accel=60.0))
     assert b.stopped == ["2.wav"]
     assert p.active_count == 2
     p.set_pao_override(False)
-    p.play(clip(4, pao=True, dur=0.5, accel=20.0))
+    p.play(clip(4, pao=True, dur=0.5, accel=60.0))
     assert p.active_count == 3
     p.stop_all()
 

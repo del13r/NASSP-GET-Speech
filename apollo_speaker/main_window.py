@@ -17,16 +17,13 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QPushButton,
-    QSizePolicy,
     QSplitter,
-    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from . import theme
 from .audio import Player
-from .bridge import Bridge
 from .chat import ChatDelegate, ChatModel
 from .clock import GetClock
 from .config import PLAYBACK_SEQUENTIAL, PLAYBACK_TIMESTAMP, Config, resolve_transcript_path
@@ -35,9 +32,7 @@ from .engine import EngineHost
 from .getutil import format_countdown, format_get, normalize_get, parse_ts
 from .pipe import CONNECTED, DISCONNECTED, WAITING, PauseReader, PipeReader, SimulatedReader
 from .scheduler import Clip
-from .site_sync import SiteSyncView
 
-SITE_SETTLE_SECONDS = 0.3
 from .speakers import portrait, speaker_color
 from .transcript import Event, discover_transcripts, load_transcript, match_speaker
 from .tts import wav_duration
@@ -175,8 +170,6 @@ class MainWindow(QMainWindow):
         self._pause_state: bool | None = False if simulate else None
         self._pause_event_t = 0.0
         self._last_sample_t = 0.0
-        self._get_invalidated_t = 0.0
-        self._pause_seen_t = 0.0
         self._awaiting_running_sample = not bool(simulate)
         self._closing = False
         self.last_error = ""
@@ -197,11 +190,6 @@ class MainWindow(QMainWindow):
         self.pause_changed.connect(eng.on_pause)
         self.player.active_changed.connect(self._on_active)
         self.busy = 0
-        self._site_running = False
-        self._site_due: float | None = None
-        self._resync_seq = 0
-        self.bridge = Bridge()
-        self.bridge.start()
 
         self._build_ui()
         self.host.start()
@@ -209,8 +197,8 @@ class MainWindow(QMainWindow):
         if not simulate:
             self.pause_reader = PauseReader(self)
             self.pause_reader.pause_changed.connect(self._on_pause)
-            self.pause_reader.pause_seen.connect(self._on_pause_seen)
             self.pause_reader.start()
+        self._load_transcript()
 
         self.ui_timer = QTimer(self)
         self.ui_timer.setInterval(16)
@@ -221,12 +209,7 @@ class MainWindow(QMainWindow):
     def _build_ui(self) -> None:
         root = QWidget()
         root.setObjectName("root")
-        self.stack = QStackedWidget()
-        self.stack.addWidget(root)
-        self.site_dock = SiteSyncView(self.bridge.port, self.config.site_offset_seconds)
-        self.stack.addWidget(self.site_dock)
-        self.stack.setCurrentIndex(1)
-        self.setCentralWidget(self.stack)
+        self.setCentralWidget(root)
         outer = QVBoxLayout(root)
         outer.setContentsMargins(16, 16, 16, 10)
         outer.setSpacing(12)
@@ -305,13 +288,6 @@ class MainWindow(QMainWindow):
         find_btn.clicked.connect(self._open_find)
         controls.addWidget(find_btn)
 
-        self.site_dock.back_requested.connect(lambda: self._show_view(0))
-        self.site_dock.offset_changed.connect(self._site_offset_changed)
-        site_btn = QPushButton("Apollo RT")
-        site_btn.setToolTip("Browser sync page: opens apolloinrealtime.org (Apollo 11, 13 or 17); unloads the transcript")
-        site_btn.clicked.connect(lambda: self._show_view(1))
-        controls.addWidget(site_btn)
-
         self.banner = QLabel("")
         self.banner.setWordWrap(True)
         self.banner.setStyleSheet("background:#4a2326;border:1px solid #ff6b6b;border-radius:8px;padding:8px 12px")
@@ -357,23 +333,6 @@ class MainWindow(QMainWindow):
         self._refresh_pill()
 
     # ------------------------------------------------------------ controls
-    def _show_view(self, index: int) -> None:
-        """The sync page keeps the transcript unloaded (no speech work); opening the transcript loads it."""
-        self.stack.setCurrentIndex(index)
-        if index == 1:
-            self._load_generation += 1
-            self._load_pending = False
-            self.player.stop_all()
-            self.timeline = []
-            self.model.set_timeline([])
-            self.up_next.set_events([])
-            self.timeline_ready.emit([])
-            self.banner.hide()
-            self._last_target = None
-        elif not self.timeline:
-            self._refresh_transcripts()
-            self._load_transcript()
-
     def _refresh_transcripts(self) -> None:
         selected = os.path.normcase(os.path.abspath(resolve_transcript_path(self.config.transcript_file)))
         transcripts = discover_transcripts()
@@ -396,8 +355,7 @@ class MainWindow(QMainWindow):
         self.config.transcript_file = path
         self.config.save()
         self._refresh_transcripts()
-        if self.stack.currentIndex() == 0:
-            self._load_transcript()
+        self._load_transcript()
 
     def _update_speech_text(self) -> None:
         on = self.speech_btn.isChecked()
@@ -438,7 +396,7 @@ class MainWindow(QMainWindow):
             dlg.apply_to(self.config)
             self.config.save()
             self._refresh_transcripts()
-            if self.config.transcript_file != old[0] and self.stack.currentIndex() == 0:
+            if self.config.transcript_file != old[0]:
                 self._load_transcript()
             if self.config.pipe_name != old[1]:
                 self._start_reader()
@@ -489,17 +447,15 @@ class MainWindow(QMainWindow):
             self._transcript_loaded(events)
 
     def _transcript_failed_for(self, generation: int, msg: str) -> None:
-        if generation == self._load_generation and not self._closing and self.stack.currentIndex() == 0:
+        if generation == self._load_generation and not self._closing:
             self._transcript_failed(msg)
 
     def _transcript_load_finished(self) -> None:
         self._loader = None
-        if self._load_pending and not self._closing and self.stack.currentIndex() == 0:
+        if self._load_pending and not self._closing:
             self._start_transcript_load()
 
     def _transcript_loaded(self, events: list[Event]) -> None:
-        if self.stack.currentIndex() == 1:
-            return  # site view is open: keep the transcript unloaded
         self.timeline = events
         self.model.set_timeline(events)
         self.timeline_ready.emit(events)
@@ -540,7 +496,6 @@ class MainWindow(QMainWindow):
         if self.clock.update(sec, accel, t) or jumped:
             self.model.set_current(-1)
             self._last_target = None
-            self._site_due = t + SITE_SETTLE_SECONDS
             if prev is not None:
                 kind = "went backwards" if sec < prev else "jumped forward"
                 self._show_error(
@@ -551,7 +506,6 @@ class MainWindow(QMainWindow):
         if self._pause_state is False and self._awaiting_running_sample and t >= self._pause_event_t:
             self._awaiting_running_sample = False
             self.clock.set_paused(False, t)
-        self._publish_site(time.monotonic())
 
     def _on_pause(self, paused: bool | None, t: float) -> None:
         if t < self._pause_event_t:
@@ -559,8 +513,6 @@ class MainWindow(QMainWindow):
         previous = self._pause_state
         self._pause_state = paused
         self._pause_event_t = t
-        if paused is not None:
-            self._pause_seen_t = max(self._pause_seen_t, t)
         self.pause_changed.emit(paused, t)
         if paused is True:
             self._awaiting_running_sample = True
@@ -571,18 +523,10 @@ class MainWindow(QMainWindow):
         elif previous is not False:
             self._awaiting_running_sample = self._last_sample_t < t
             self.clock.set_paused(self._awaiting_running_sample, max(t, self._last_sample_t))
-        self._publish_site(time.monotonic())
-
-    def _on_pause_seen(self, t: float) -> None:
-        self._pause_seen_t = max(self._pause_seen_t, t)
-        self._publish_site(time.monotonic())
 
     def _on_status(self, state: str, detail: str) -> None:
-        if state == DISCONNECTED and self.conn_state != DISCONNECTED:
-            self._get_invalidated_t = time.monotonic()
         self.conn_state, self.conn_detail = state, detail
         self._refresh_pill()
-        self._publish_site(time.monotonic())
 
     def _refresh_pill(self) -> None:
         color, label = {
@@ -622,7 +566,6 @@ class MainWindow(QMainWindow):
         now = time.monotonic()
         est = self.clock.estimate(now)
         accel = self.clock.accel
-        self._site_tick(now, est, self.clock.is_stale(now), accel)
         if est is None or not self.timeline:
             self.countdown.setText("--:--.-")
             self.countdown.setStyleSheet(f"color:{theme.TEXT_DIM}")
@@ -668,36 +611,6 @@ class MainWindow(QMainWindow):
                 else:
                     self._last_target = target
 
-    # ------------------------------------------------------- site sync
-    def _publish_site(self, now: float) -> None:
-        self._site_tick(now, self.clock.estimate(now), self.clock.is_stale(now), self.clock.accel)
-
-    def _site_tick(self, now: float, est: float | None, stale: bool, accel: float) -> None:
-        available = (est is not None and self._pause_state is not None
-                     and self.conn_state != DISCONNECTED
-                     and self._last_sample_t >= self._get_invalidated_t
-                     and (self.simulate or self._pause_seen_t >= self._get_invalidated_t))
-        if self._pause_state is False:
-            available = (available and self.conn_state == CONNECTED
-                         and not stale and not self._awaiting_running_sample)
-        running = available and self._pause_state is False and abs(accel - 1.0) < 0.01
-        if running and not self._site_running:
-            self._resync_seq += 1
-        if not running:
-            self._site_due = None
-        self._site_running = running
-        if self._site_due is not None and now >= self._site_due:
-            self._site_due = None
-            self._resync_seq += 1
-        self.bridge.update(
-            est, accel, running, self._resync_seq, self.config.site_offset_seconds,
-            self._pause_state if available else None,
-        )
-
-    def _site_offset_changed(self, value: float) -> None:
-        self.config.site_offset_seconds = value
-        self.config.save()
-
     # ------------------------------------------------------------- shutdown
     def closeEvent(self, event) -> None:
         if self._closing:
@@ -714,7 +627,6 @@ class MainWindow(QMainWindow):
         if self._loader is not None:
             self._loader.wait(5000)
         self.player.stop_all()
-        self.bridge.stop()
         self.host.stop()
         self.config.window_geometry = bytes(self.saveGeometry().toBase64()).decode("ascii")
         self.config.save()

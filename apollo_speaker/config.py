@@ -66,9 +66,10 @@ class Config:
     playback_policy: str = PLAYBACK_TIMESTAMP
     pao_override: bool = True  # a new PAO clip cuts off the previous PAO clip
     follow_current: bool = True
-    site_sync_auto: bool = False  # unused
-    site_mission: str = "13"  # unused
-    site_offset_seconds: float = 0.0  # added to the GET sent to the browser extension
+    # Legacy browser-sync options stay serialized so existing configs are preserved.
+    site_sync_auto: bool = False
+    site_mission: str = "13"
+    site_offset_seconds: float = 0.0
     window_geometry: str = ""
     voice_map: dict = field(default_factory=_default_voices)
 

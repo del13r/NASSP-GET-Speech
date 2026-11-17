@@ -82,7 +82,6 @@ def test_selector_switches_during_load_and_persists(qapp, tmp_path, monkeypatch)
     win = MainWindow(cfg, simulate=("+000:00:00", 1.0))
     try:
         assert win.windowTitle() == "NASSP GET Speech"
-        win._show_view(0)
         assert started.wait(2)
         win.transcript_menu.actions()[1].trigger()
         release.set()
@@ -103,7 +102,6 @@ def test_selector_keeps_custom_path_and_reports_missing(qapp, tmp_path):
         current = next(action for action in win.transcript_menu.actions() if action.isChecked())
         assert current.data() == str(missing)
         assert current.text() == f"Custom: {missing}"
-        win._show_view(0)
         pump(qapp, 0.5)
         assert "Transcript not found" in win.banner.text()
     finally:
@@ -126,7 +124,6 @@ def test_transcript_button_refreshes_menu_and_selects(qapp, tmp_path, monkeypatc
     try:
         loads = []
         monkeypatch.setattr(win, "_load_transcript", lambda: loads.append(cfg.transcript_file))
-        win._show_view(0)
         win.show()
         pump(qapp, 0.1)
         loads.clear()
@@ -145,23 +142,19 @@ def test_transcript_button_refreshes_menu_and_selects(qapp, tmp_path, monkeypatc
         assert cfg.transcript_file == mission
         assert Config.load(cfg._path).transcript_file == mission
         assert loads == [mission]
-        win._show_view(1)
         loads.clear()
         win._select_transcript(custom)
-        assert not loads
-        win._show_view(0)
         assert loads == [custom]
     finally:
         win.close()
         pump(qapp, 0.2)
 
 
-def test_bundled_default_loads_in_transcript_view(qapp, tmp_path):
+def test_bundled_default_loads_at_startup(qapp, tmp_path):
     cfg = make_config(tmp_path, Config().transcript_file)
     win = MainWindow(cfg, simulate=("+000:00:00", 1.0))
     try:
         assert next(action.text() for action in win.transcript_menu.actions() if action.isChecked()) == "Apollo 12"
-        win._show_view(0)
         deadline = time.monotonic() + 10
         while not win.timeline and time.monotonic() < deadline:
             pump(qapp, 0.05)
@@ -179,7 +172,6 @@ def test_transcript_button_does_not_expand_window_for_long_names(qapp, tmp_path,
     monkeypatch.setattr(main_window, "discover_transcripts", lambda: transcripts)
     win = MainWindow(make_config(tmp_path, path), simulate=("+000:00:00", 1.0))
     try:
-        win._show_view(0)
         win.show()
         win.resize(1, 700)
         pump(qapp, 0.1)
@@ -221,7 +213,6 @@ def test_follow_scrolls_to_distant_event(qapp, tmp_path):
     t.write_text(json.dumps(events), encoding="utf-8")
     win = MainWindow(make_config(tmp_path, t), simulate=("+110:00:00", 1.0))
     win.resize(900, 700)
-    win._show_view(0)
     win.show()
     pump(qapp, 3.0)
     idx = win.model.next_idx

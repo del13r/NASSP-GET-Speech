@@ -51,11 +51,17 @@ def test_config_roundtrip_and_voice_map(tmp_path):
     cfg.playback_policy = PLAYBACK_SEQUENTIAL
     cfg.voice_map["Conrad"] = {"model": "custom.onnx", "pan": "center"}
     cfg.model_dir = str(tmp_path)
+    cfg.site_sync_auto = True
+    cfg.site_mission = "17"
+    cfg.site_offset_seconds = 42.5
     cfg.save()
     again = Config.load(p)
     assert again.playback_policy == PLAYBACK_SEQUENTIAL
     assert again.voice_for("Conrad") == {"model": "custom.onnx", "pan": "center"}
     assert again.model_path("Conrad") == str(tmp_path / "custom.onnx")
+    assert again.site_sync_auto is True
+    assert again.site_mission == "17"
+    assert again.site_offset_seconds == 42.5
     assert again.voice_for("Nobody")["model"]  # falls back to Lind's voice
 
 

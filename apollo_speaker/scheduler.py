@@ -180,7 +180,9 @@ class Scheduler:
             return
         if idx not in self.states:
             self._request(idx, accel)
-        st = self.states[idx]
+        st = self.states.get(idx)
+        if st is None:
+            return
         st.fired = True
         if not st.pending:
             self._play(idx, st)

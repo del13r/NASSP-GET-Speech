@@ -19,7 +19,6 @@ class PauseRecordParser:
         self._buffer = bytearray()
         self._sequence: int | None = None
         self._paused: bool | None = None
-        self.records = 0
 
     def feed(self, data: bytes) -> Iterator[bool]:
         self._buffer.extend(data)
@@ -40,11 +39,9 @@ class PauseRecordParser:
                 raise PauseProtocolError("Pause sequence out of range")
             if self._sequence is not None:
                 if sequence == self._sequence and paused == self._paused:
-                    self.records += 1
                     continue
                 if sequence != self._sequence + 1 or paused == self._paused:
                     raise PauseProtocolError("Pause sequence gap or inconsistent state")
             self._sequence = sequence
             self._paused = paused
-            self.records += 1
             yield paused
